@@ -1,7 +1,7 @@
 /*Получение кода*/
 void CodeProcessing (void *parameter)
 {
-	static uint32_t code, code_last;																//Код датчика   
+	static uint32_t code, code_last;													//Код датчика   
 	static uint16_t cycle_counter;														//Счетчик циклов
 	portTickType time_last = xTaskGetTickCount();										//Сохранение времени вызова	
 	for(;;)
@@ -37,7 +37,6 @@ void CodeProcessing (void *parameter)
 					log_i("-------------------------------------------> %0X", code); 
 					
 					int k=-1;
-					
 					//Определение наименования сработавшего датчика
 					for (int i=0; i<35; i++)
 					{
@@ -51,8 +50,7 @@ void CodeProcessing (void *parameter)
 					switch (k) 
 					{
 						case 1: 
-							Serial.println("Семафор отправлен >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
-							xSemaphoreGive(xBinSemaphore_SensorSignal);
+							if (flag_ProtectOn) xSemaphoreGive(xBinSemaphore_SensorSignal);
 							break;
 						case 2:
 							ProtectOn();
@@ -195,8 +193,6 @@ void Now_Exchange(void *parameter)
 /*Контроль 220В*/
 void PowerControl(void *parameter)
 {
-	
-	
 	static bool flag_Power;
 	for(;;)
 	{

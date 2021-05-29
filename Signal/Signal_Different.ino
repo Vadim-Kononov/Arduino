@@ -1,12 +1,15 @@
 /*Включение сигнализации*/
 void ProtectOn()
 {
-	flag_ProtectOn 		= true;
-	alarm_start.on 		= 150;
-	alarm_start.off 	= 0;
-	alarm_start.count 	= 1;		
-	alarm_start.enable 	= true;
-	xQueueSend(queueAlarm, &alarm_start, 10);
+	flag_ProtectOn = true;
+	if(flag_AlarmEnable)
+	{
+		alarm_start.on 		= 75;
+		alarm_start.off 	= 0;
+		alarm_start.count 	= 1;		
+		vTaskResume(handleAlarmProcessing);
+		xQueueSend(queueAlarm, &alarm_start, 250);
+	}
 }
 
 
@@ -16,29 +19,36 @@ void AlarmOn()
 {
 	if(flag_AlarmEnable)
 	{
-	alarm_start.on 		= 1800000;
+	alarm_start.on 		= 60000;
 	alarm_start.off 	= 0;
 	alarm_start.count 	= 1;		
-	alarm_start.enable 	= true;	
+	vTaskResume(handleAlarmProcessing);
+	xQueueSend(queueAlarm, &alarm_start, 250);
 	}
-
-
 }
-
 
 
 
 /*Отключение сигнализации*/
 void ProtectOff()
 {
-	flag_ProtectOn 		= false;
-	alarm_start.on 		= 75;
-	alarm_start.off 	= 75;
-	alarm_start.count 	= 2;
-	alarm_start.enable 	= false;
-	xQueueSend(queueAlarm, &alarm_start, 10000);
+	flag_ProtectOn = false;
+	vTaskSuspend(handleAlarmProcessing);
+	if(flag_AlarmEnable)
+	{
+		digitalWrite(ALARM_RELAY_PIN_1, LOW);
+		digitalWrite(ALARM_RELAY_PIN_2, LOW);
+		vTaskDelay(50);
+		digitalWrite(ALARM_RELAY_PIN_1, HIGH);
+		digitalWrite(ALARM_RELAY_PIN_2, HIGH);
+		vTaskDelay(50);
+		digitalWrite(ALARM_RELAY_PIN_1, LOW);
+		digitalWrite(ALARM_RELAY_PIN_2, LOW);
+		vTaskDelay(50);
+	}
+	digitalWrite(ALARM_RELAY_PIN_1, HIGH);
+	digitalWrite(ALARM_RELAY_PIN_2, HIGH);		
 }
-
 
 
 
@@ -65,22 +75,27 @@ void SensorSignal(void *parameter)
    {
 		xSemaphoreTake(xBinSemaphore_SensorSignal, portMAX_DELAY);	//Получение семафора
 		Serial.println("Семафор получен <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
-		IFTTTSend (String(ifttt_event), String(board_name), "SensorSignal", title);
-		if (flag_RepeatSignal)
+		IFTTTSend (String(ifttt_event), String(board_name), "Sensor signal", title);
+		
+		if (!flag_RepeatSignal)
 		{
 			alarm_start.on 		= 500;
 			alarm_start.off 	= 250;
-			alarm_start.count 	= 3;		
-			alarm_start.enable 	= true;
+			alarm_start.count 	= 1;		
 		}
 		else
 		{
-			alarm_start.on 		= 2000;
-			alarm_start.off 		= 1000;
-			alarm_start.count 	= 6;
-			alarm_start.enable 	= true;	
+			alarm_start.on 		= 1000;
+			alarm_start.off 	= 1000;
+			alarm_start.count 	= 3;
 		}
-		xQueueSend(queueAlarm, &alarm_start, 10);
+		
+		if (flag_AlarmEnable)
+		{
+			vTaskResume(handleAlarmProcessing);
+			xQueueSend(queueAlarm, &alarm_start, 1000);
+		}
+		
 		flag_RepeatSignal	= true;
 		xTimerStart(timerRepeatSignal, 10);
 	}
@@ -103,35 +118,17 @@ void AlarmProcessing (void *parameter)
 	{
 		xQueueReceive(queueAlarm, &alarm_start, portMAX_DELAY);
 		Serial.println("Очередь получена <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
-		if(flag_AlarmEnable && alarm_start.enable)
-		{		
-			for (int i = alarm_start.count; i > 0; i--)
-			{
-				if (alarm_start.enable)
-				{
-					digitalWrite(ALARM_RELAY_PIN_1, LOW);
-					digitalWrite(ALARM_RELAY_PIN_2, LOW);
-					vTaskDelay(alarm_start.on);
-					digitalWrite(ALARM_RELAY_PIN_1, HIGH);
-					digitalWrite(ALARM_RELAY_PIN_2, HIGH);
-					vTaskDelay(alarm_start.off);
-				}
-				else
-				{
-				digitalWrite(ALARM_RELAY_PIN_1, HIGH);
-				digitalWrite(ALARM_RELAY_PIN_2, HIGH);	
-				break;
-				}	
-			}
-		}
-		else
+		for (int i = alarm_start.count; i > 0; i--)
 		{
+			digitalWrite(ALARM_RELAY_PIN_1, LOW);
+			digitalWrite(ALARM_RELAY_PIN_2, LOW);
+			vTaskDelay(alarm_start.on);
 			digitalWrite(ALARM_RELAY_PIN_1, HIGH);
-			digitalWrite(ALARM_RELAY_PIN_2, HIGH);		
+			digitalWrite(ALARM_RELAY_PIN_2, HIGH);
+			vTaskDelay(alarm_start.off);
 		}
 	}
 }
-
 
 
 
@@ -158,9 +155,6 @@ void Telnet(void *parameter)
 		}
 	}
 }
-
-
-
 
 
 

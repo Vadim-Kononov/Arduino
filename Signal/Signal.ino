@@ -80,7 +80,6 @@ struct alarm_Startup
 uint32_t	on;
 uint32_t	off;
 uint16_t	count;
-bool		enable;
 };
 alarm_Startup alarm_start;
 
@@ -116,7 +115,8 @@ my_number_2 	= "+79094008600",
 boris_number 	= "+79896134008",
 gleb_number 	= "+79896134009";
 
-
+/*Задачи*/
+TaskHandle_t handleAlarmProcessing;
 
 /*Очереди*/
 QueueHandle_t queueReceiving;
@@ -126,13 +126,13 @@ QueueHandle_t queueAlarm;
 xSemaphoreHandle xBinSemaphore_PutStart;											//Запуск передачи ESP-NOW
 xSemaphoreHandle xBinSemaphore_SensorSignal;
 
-
 /*Таймеры*/
 TimerHandle_t timerReset  		= xTimerCreate("timerReset",  		pdMS_TO_TICKS(500),         pdFALSE,  (void*)0, reinterpret_cast<TimerCallbackFunction_t>(Reset));		//Задержка для вызова Reset
 TimerHandle_t timerRecon  		= xTimerCreate("timerRecon",  		pdMS_TO_TICKS(500),         pdFALSE,  (void*)0, reinterpret_cast<TimerCallbackFunction_t>(Recon));		//Задержка для вызова Reconnect
 TimerHandle_t timerSavingCode  	= xTimerCreate("timerSavingCode",	pdMS_TO_TICKS(5000),       	pdFALSE,  (void*)0, reinterpret_cast<TimerCallbackFunction_t>(SavingCode));	//Задержка ожидания записи кода
-
 TimerHandle_t timerRepeatSignal = xTimerCreate("timerRepeatSignal",	pdMS_TO_TICKS(10000),       pdFALSE,  (void*)0, reinterpret_cast<TimerCallbackFunction_t>(RepeatSignal));
+
+
 
 
 void setup()
@@ -199,29 +199,27 @@ queueAlarm 		= xQueueCreate(1, sizeof(alarm_Startup));							//Включени�
 vSemaphoreCreateBinary(xBinSemaphore_PutStart);									//Запуск передачи ESP-NOW
 vSemaphoreCreateBinary(xBinSemaphore_SensorSignal);
 
-
+/*Обнуление очереди и семафора*/
 xQueueReceive(queueAlarm, &alarm_start, 100);
 xSemaphoreTake(xBinSemaphore_SensorSignal, 	100);
 
-
 /*Задачи*/
 xTaskCreate(WiFiConnect,	"WiFiConnect"		, 2000,  NULL, 1, NULL);			//Подключение WiFi при потере связи
-xTaskCreate(Now_Exchange, 	"Now_Exchange"		, 2000,  NULL, 0, NULL);			//ESP-NOW обмен
-xTaskCreate(Receiving, 		"Receiving"			, 2000,  NULL, 0, NULL); 			//Обработка принятых ESP-NOW данных
-xTaskCreate(Sending, 		"Sending"			, 2000,  NULL, 0, NULL); 			//Отправка ESP-NOW данных
+xTaskCreate(Now_Exchange, 	"Now_Exchange"		, 1000,  NULL, 0, NULL);			//ESP-NOW обмен
+xTaskCreate(Receiving, 		"Receiving"			, 1000,  NULL, 0, NULL); 			//Обработка принятых ESP-NOW данных
+xTaskCreate(Sending, 		"Sending"			, 1000,  NULL, 0, NULL); 			//Отправка ESP-NOW данных
 xTaskCreate(Bluetooth, 		"Bluetooth"			, 3000,  NULL, 0, NULL); 			//Bluetooth терминал
 xTaskCreate(Telnet, 		"Telnet"			, 3000,  NULL, 0, NULL); 			//Telnet терминал
 xTaskCreate(OTA, 			"OTA"				, 2000,  NULL, 0, NULL); 			//OTA загрузка скетча
 xTaskCreate(MQTTConnect,	"MQTTConnect"		, 2000,  NULL, 1, NULL); 			//Подключение MQTT при потере связи
 xTaskCreate(MQTTSend,		"MQTTSend"			, 2000,  NULL, 1, NULL); 			//Отправка MQTT
 
-xTaskCreate(CodeProcessing,		"CodeProcessing"	, 2000,  NULL, 0, NULL); 		//Получение кода датчика
-xTaskCreate(SIM800Processing,	"SIM800Processing"	, 5000,  NULL, 0, NULL); 		//Получение SMS
-xTaskCreate(AlarmProcessing,	"AlarmProcessing"	, 1000,  NULL, 0, NULL); 		//Управление сиреной
-xTaskCreate(PowerControl,		"PowerControl"		, 1000,  NULL, 0, NULL); 		//Контроль 220В
+xTaskCreate(CodeProcessing,	"CodeProcessing"	, 2000,  NULL, 0, NULL); 			//Получение кода датчика
+xTaskCreate(SIM800Processing,"SIM800Processing"	, 3000,  NULL, 0, NULL); 			//Получение SMS
+xTaskCreate(PowerControl,	"PowerControl"		, 1000,  NULL, 0, NULL); 			//Контроль 220В
+xTaskCreate(SensorSignal,	"SensorSignal"		, 2000,  NULL, 0, NULL);
 
-xTaskCreate(SensorSignal,		"SensorSignal"		, 2000,  NULL, 0, NULL);
-
+xTaskCreate(AlarmProcessing, "AlarmProcessing" 	, 1000,	 NULL, 0, &handleAlarmProcessing);
 
 //Загрузка таблицы из EEPROM
 memory.getBytes("mem", (detector*)detector_ram, sizeof(detector_ram));
@@ -236,10 +234,6 @@ mqttClient.onMessage(mqtt_Receiving_Complete);										//Назначение �
 mqttClient.setServer(mqtt_host, mqtt_port);										
 mqttClient.setCredentials(mqtt_username, mqtt_pass);												
 mqttClient.setClientId(board_name);
-
-
-
-
 }
 
 /*Отключение loop()*/
