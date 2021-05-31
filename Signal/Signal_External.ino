@@ -112,13 +112,19 @@ void MQTTSend (void *parameter)
 		day 	= time/86400; 	remains = time%86400;
 		hour 	= remains/3600; remains = remains%3600;
 		min 	= remains/60; 	sec 	= remains%60;
-		char str[20];
+		char str[35];
 		sprintf (str, "%02d 🌙 %02d:%02d:%02d", day, hour, min, sec);
 		mqttClient.publish("time", 0, false, String(str).c_str());
 		mqttClient.publish("enable", 0, false, String(flag_AlarmEnable).c_str());
 		mqttClient.publish("protect", 0, false, String(flag_ProtectOn).c_str());
+		mqttClient.publish("exchange", 0, false, String(now_put.exchange).c_str());
+		float busvoltage = ina219.getBusVoltage_V();
+		float current_mA = ina219.getCurrent_mA();
+		sprintf (str, "Voltage: %04.1fV    Current: %03.1fA", busvoltage, current_mA/1000.0);
+		mqttClient.publish("ina", 0, false, String(str).c_str());
+		
 		//log_i("%010.3f", TICKCOUNT);
-		vTaskDelay(2000); 
+		vTaskDelay(1000); 
    }
 }
 

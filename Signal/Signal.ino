@@ -18,18 +18,21 @@
 #include <AsyncMqttClient.h>
 #include <Preferences.h>
 
+#include <Wire.h>
+#include <Adafruit_INA219.h>
+
 /*Определения GPIO для SIM800*/
 #define RXD2 25
 #define TXD2 27
-#define SIM800_PWR 5
+#define SIM800_PWR 32
 
 /*Определение пина питания от сети, пинов реле тревоги*/
-#define POWER_PIN 26
-#define ALARM_RELAY_PIN_1 19
-#define ALARM_RELAY_PIN_2 23
+#define POWER_PIN 18
+#define ALARM_RELAY_PIN_1 26
+#define ALARM_RELAY_PIN_2 33
 
 /*Определения для приемника 433 Мгц*/
-#define RECEIVER_PIN 18
+#define RECEIVER_PIN 23
 #include <RCSwitch.h>
 
 /*Определения для Telnet*/
@@ -44,6 +47,8 @@ Preferences memory;
 
 /*Определениe для приемника 433 Мгц*/
 RCSwitch receiver = RCSwitch();
+
+Adafruit_INA219 ina219;
 
 /*MAC AC:67:B2:F8:E:A8 Адрес главной платы*/
 const char *board_name = "Signal";
@@ -68,8 +73,11 @@ const int	 mqtt_port		PROGMEM = 2836;
 struct now_Data
 {
 char		board_name [20];
-bool		flag;
 uint16_t	hash;
+bool		exchange;
+bool		protect;
+bool		alarm;
+bool 		light;
 };
 now_Data now_get;
 now_Data now_put;
@@ -174,6 +182,8 @@ sendATCommand("AT+CMGDA=\"DEL ALL\"", 5000);
 /*Включение приемника 433 МГц*/
 receiver.enableReceive(RECEIVER_PIN);
 
+ina219.begin();
+
 memcpy(now_put.board_name, board_name, 20);											//Запись имени платы в структуру
 
 /*Удаление ключей || Инициализация NVS памяти */
@@ -216,7 +226,7 @@ xTaskCreate(MQTTSend,		"MQTTSend"			, 2000,  NULL, 1, NULL); 			//Отправк
 
 xTaskCreate(CodeProcessing,	"CodeProcessing"	, 2000,  NULL, 0, NULL); 			//Получение кода датчика
 xTaskCreate(SIM800Processing,"SIM800Processing"	, 3000,  NULL, 0, NULL); 			//Получение SMS
-xTaskCreate(PowerControl,	"PowerControl"		, 1000,  NULL, 0, NULL); 			//Контроль 220В
+xTaskCreate(PowerControl,	"PowerControl"		, 2000,  NULL, 0, NULL); 			//Контроль 220В
 xTaskCreate(SensorSignal,	"SensorSignal"		, 2000,  NULL, 0, NULL);
 
 xTaskCreate(AlarmProcessing, "AlarmProcessing" 	, 1000,	 NULL, 0, &handleAlarmProcessing);

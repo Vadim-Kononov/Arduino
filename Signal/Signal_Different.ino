@@ -2,6 +2,7 @@
 void ProtectOn()
 {
 	flag_ProtectOn = true;
+	now_put.protect = true;
 	if(flag_AlarmEnable)
 	{
 		alarm_start.on 		= 75;
@@ -17,6 +18,7 @@ void ProtectOn()
 /*Включение сирены*/
 void AlarmOn()
 {
+	now_put.alarm = true;
 	if(flag_AlarmEnable)
 	{
 	alarm_start.on 		= 60000;
@@ -33,6 +35,9 @@ void AlarmOn()
 void ProtectOff()
 {
 	flag_ProtectOn = false;
+	now_put.protect = false;
+	now_put.alarm = false;
+	
 	vTaskSuspend(handleAlarmProcessing);
 	if(flag_AlarmEnable)
 	{
@@ -55,7 +60,7 @@ void ProtectOff()
 /*Включение cвета*/
 void LightOn()
 {
-	
+	now_put.light = true;
 }
 
 
@@ -63,7 +68,7 @@ void LightOn()
 /*JОтключение света*/
 void LightOff()
 {
-	
+	now_put.light = false;
 }
 
 

@@ -12,12 +12,20 @@ void Receiving(void *parameter)
    for(;;)
    {
     xQueueReceive(queueReceiving, &now_get, portMAX_DELAY);
-    Serial.print("Receiving <<< ");
-    Serial.println (TICKCOUNT);
-    Serial.println(String(now_get.board_name));
-    Serial.println(now_get.exchange);
-    Serial.println(now_get.hash);
-    Serial.println();
+    
+	if (now_get.exchange)
+	{
+		Serial.print("now_get.protect: ");
+		Serial.println (now_get.protect);
+		Serial.print("now_get.alarm: ");
+		Serial.println (now_get.alarm);
+		Serial.print("now_get.light: ");
+		Serial.println (now_get.light);
+		Serial.println ();
+	}
+	
+  
+    xSemaphoreGive(xBinSemaphore_Get_End);											//Выдача семафора окончания обработки данных
   }
 }
 
@@ -28,24 +36,17 @@ void Sending(void *parameter)
 {
    for(;;)
    {
-    xSemaphoreTake(xBinSemaphore_PutStart, portMAX_DELAY);							//Получение семафора отправки данных
-    
-    /*Для главной платы*/
-    #ifdef MAIN //--------------------------------------------------------------------------------------------------------------------------
-    if (now_get.hash == now_put.hash)   now_put.exchange = true; 						//Проверка принятого хэша
-    else                				now_put.exchange = false;
-    now_put.hash = random(1000);													//Запись случайного хэша
-    #endif //-------------------------------------------------------------------------------------------------------------------------------
+    xSemaphoreTake(xBinSemaphore_Put_Start, portMAX_DELAY);							//Получение семафора отправки данных
     
     esp_err_t result = esp_now_send(mac_Peer_One, (uint8_t *) &now_put, sizeof(now_put));
     if (result == ESP_OK)
     {
-      Serial.print("Sending >>> ");
-      Serial.println (TICKCOUNT);
-      Serial.println(String(now_put.board_name));
-      Serial.println(now_put.exchange);
-      Serial.println(now_put.hash);
-      Serial.println();
+      // Serial.print("Sending >>> ");
+      // Serial.println (TICKCOUNT);
+      // Serial.println(String(now_put.board_name));
+      // Serial.println(now_put.exchange);
+      // Serial.println(now_put.hash);
+      // Serial.println();
     }
     else log_i("! Failed Sending the data !");
   }

@@ -184,7 +184,7 @@ void Now_Exchange(void *parameter)
 			cycle_counter = 0;
 			xSemaphoreGive(xBinSemaphore_PutStart);										//Выдача семафора отправки ESP-NOW
 		}
-		vTaskDelayUntil(&time_last, (2000));												//Таймаут между циклами
+		vTaskDelayUntil(&time_last, (1000));												//Таймаут между циклами
 	} 
 }
 
@@ -200,8 +200,8 @@ void PowerControl(void *parameter)
 		if (flag_Power != digitalRead(POWER_PIN))
 		{
 			flag_Power = digitalRead(POWER_PIN);
-			//if (flag_Power) {sendSMS(my_number_1, "Voltage 220V OFF"); 	IFTTTSend (String(ifttt_event), String(board_name), "Voltage 220V OFF", "");}
-			//else 			{sendSMS(my_number_1, "Voltage 220V ON"); 	IFTTTSend (String(ifttt_event), String(board_name), "Voltage 220V ON", "");}
+			if (flag_Power) {IFTTTSend (String(ifttt_event), String(board_name), "Voltage 220V OFF", "");}
+			else 			{IFTTTSend (String(ifttt_event), String(board_name), "Voltage 220V ON", "");}
 		}
 		vTaskDelay(1000);																	//Таймаут между циклами
 	} 
