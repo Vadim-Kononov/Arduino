@@ -26,6 +26,7 @@ void WiFiConnect(void *parameter)
 		memory.getString("passw").toCharArray(pass, memory.getString("passw").length() + 1);
 		if (flag_AfterBoot) memory.putInt("countWifi", memory.getInt("countWifi") + 1); else flag_AfterBoot = true;
 		WiFi.begin(ssid, pass);
+		WiFi.setSleep(false);
 	}
     vTaskDelay(60000); 
   }
@@ -105,8 +106,16 @@ void MQTTConnect(void *parameter)
 /*Функция отправки сообщений MQTT*/
 void MQTTSend (void *parameter)
 {
+	static uint16_t cycle_counter;
+	bool flag_SendAlarm = false;
 	for(;;)
-   {
+	{
+		cycle_counter ++;																	//Подсчет циклов
+		if (cycle_counter >= 180)															//Действия при наборе количества циклов
+		{
+			cycle_counter = 0;
+			flag_SendAlarm = true;
+		}
 		uint32_t time = xTaskGetTickCount() / 1000, remains;
 		uint8_t sec, min, hour, day;
 		day 	= time/86400; 	remains = time%86400;
@@ -116,10 +125,19 @@ void MQTTSend (void *parameter)
 		sprintf (str, "%02d 🌙 %02d:%02d:%02d", day, hour, min, sec);
 		mqttClient.publish("time", 0, false, String(str).c_str());
 		mqttClient.publish("enable", 0, false, String(flag_AlarmEnable).c_str());
+		mqttClient.publish("light", 0, false, String(now_get.light).c_str());
 		mqttClient.publish("protect", 0, false, String(flag_ProtectOn).c_str());
 		mqttClient.publish("exchange", 0, false, String(now_put.exchange).c_str());
+	
 		float busvoltage = ina219.getBusVoltage_V();
 		float current_mA = ina219.getCurrent_mA();
+		if (current_mA > 500.0 && flag_SendAlarm)
+		{
+			IFTTTSend (String(ifttt_event), String(board_name), "!!! Alarm is running !!!", "");
+			sendSMS(my_number_2, "!!! Alarm is running !!!");
+			flag_SendAlarm = false;
+			cycle_counter = 0;
+		}
 		sprintf (str, "Voltage: %04.1fV    Current: %03.1fA", busvoltage, current_mA/1000.0);
 		mqttClient.publish("ina", 0, false, String(str).c_str());
 		

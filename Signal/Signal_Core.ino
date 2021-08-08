@@ -1,76 +1,75 @@
 /*Получение кода*/
 void CodeProcessing (void *parameter)
 {
-	static uint32_t code, code_last;													//Код датчика   
-	static uint16_t cycle_counter;														//Счетчик циклов
-	portTickType time_last = xTaskGetTickCount();										//Сохранение времени вызова	
+	static uint32_t code, code_last;												//Полученный код, предшествующий код
+	static uint16_t cycle_counter;													//Счетчик циклов
+	portTickType time_last = xTaskGetTickCount();									//Сохранение времени вызова	
 	for(;;)
 	{
-		cycle_counter++;																//Обнуление code после 10 циклов
+		cycle_counter++;															//Обнуление кода после 10 циклов
 		if (cycle_counter >= 10)														
 		{
 			cycle_counter 	= 0;
 			code_last 		= 0;
 		}
 		
-		if (receiver.available())
+		if (receiver.available())													//Если поступили данные от приемника
 		{
-			code = receiver.getReceivedValue();
-			receiver.resetAvailable();
-			if (code != code_last)
+			code = receiver.getReceivedValue();										//Получение данных
+			receiver.resetAvailable();												//Сброс буфера
+			if (code != code_last)													//Если кол не првторился
 			{
-				code_last 		= code;
-				cycle_counter 	= 0;
-				if (flag_SavingCode)
+				code_last 		= code;												//Сохранение кода
+				cycle_counter 	= 0;												//Обновление счетчика циклов до обнуления кода
+				if (flag_SavingCode)												//Если режим записи кода в NVS
 				{
-					flag_SavingCode = false;
-					detector_ram[number].code 	= code;										//Запись элементов структуры
-					detector_ram[number].type 	= type;
-					title.toCharArray(detector_ram[number].title, 50);
-					memory.putBytes("mem", (detector*)detector_ram, sizeof(detector_ram));	//Запись в NVS
-					TelnetClient.println (PrintDetector());									//Вывод в терминалы таблицы кодов
-					SerialBT.println (PrintDetector());		
-					IFTTTSend (String(ifttt_event), "There was a sensor code entry", "", "");	
+					flag_SavingCode = false;										//Отключение этого режима для последующего приема
+					detector_ram[number].code 	= code;								//Запись элементов структуры
+					detector_ram[number].type 	= type;								//Запись элементов структуры
+					title.toCharArray(detector_ram[number].title, 50);				//Запись элементов структуры
+					memory.putBytes("mem", (detector*)detector_ram, sizeof(detector_ram));	//Запись структуры в NVS
+					TelnetClient.println (PrintDetector());									//Вывод в терминал таблицы кодов
+					SerialBT.println (PrintDetector());										//Вывод в терминал таблицы кодов
+					IFTTTSend (String(ifttt_event), "There was a sensor code entry", "", "");	//Отправка уведомления
 				}
-				else
+				else																//Если НЕ режим записи кода в NVS
 				{
 					log_i("-------------------------------------------> %0X", code); 
 					
-					int k=-1;
-					//Определение наименования сработавшего датчика
+					int k=-1;														//Поиск в таблице сработавшего датчика
 					for (int i=0; i<35; i++)
 					{
 						if (detector_ram[i].code == code)
 						{
-							k = detector_ram[i].type;
-							title = detector_ram[i].title;
+							k = detector_ram[i].type;								//Получение типа датчика
+							title = detector_ram[i].title;							//Получение названия датчика
 							break;
 						}
 					}
-					switch (k) 
+					switch (k) 														//Определение последующих действий по типу датчика
 					{
 						case 1: 
-							if (flag_ProtectOn) xSemaphoreGive(xBinSemaphore_SensorSignal);
+							if (flag_ProtectOn) xSemaphoreGive(xBinSemaphore_SensorSignal); //Запуск с помощью семафора задачи обработки кода при включенной сигнализации
 							break;
 						case 2:
-							ProtectOn();
+							ProtectOn();											//Включение сигнализации
 							break;
 						case 3: 
-							AlarmOn();
+							AlarmOn();												//Включение сирены
 							break;
 						case 4:
-							ProtectOff();
+							ProtectOff();											//Отключение сигнализации и сирены
 							break;
 						case 5:
-							LightOn();
+							LightOn();												//Включение света
 							break;
 						case 6:
-							LightOff();
+							LightOff();												//Отключение света
 					}
 				}		
 			}
 		}
-	vTaskDelayUntil(&time_last, (500));														//Таймаут между циклами	
+	vTaskDelayUntil(&time_last, (500));												//Таймаут между циклами	
 	}
 }
 
@@ -165,27 +164,8 @@ String sendATCommand(String str, uint32_t waiting)
 	uint32_t time_last = xTaskGetTickCount();	
 	while (Serial2.available() == 0 && xTaskGetTickCount() - time_last < waiting) {};	
 	if (Serial2.available()) answer = Serial2.readString(); else answer = "Timeout";
-	Serial.println(answer);
+	//Serial.println(answer);
 	return answer;
-}
-
-
-
-/*ESP-NOW обмен*/
-void Now_Exchange(void *parameter)
-{
-	portTickType time_last = xTaskGetTickCount();											//Сохранение времени вызова
-	static uint16_t cycle_counter;															//Статический счетчик циклов Now_Exchange
-	for(;;)
-	{
-		cycle_counter += 1;																	//Подсчет циклов Now_Exchange
-		if (cycle_counter >= 1)																//Действия при наборе количества циклов
-		{
-			cycle_counter = 0;
-			xSemaphoreGive(xBinSemaphore_PutStart);										//Выдача семафора отправки ESP-NOW
-		}
-		vTaskDelayUntil(&time_last, (1000));												//Таймаут между циклами
-	} 
 }
 
 
@@ -205,4 +185,31 @@ void PowerControl(void *parameter)
 		}
 		vTaskDelay(1000);																	//Таймаут между циклами
 	} 
+}
+
+
+
+/*ESP-NOW обмен*/
+void Now_Exchange(void *parameter)
+{
+	portTickType time_last = xTaskGetTickCount();											//Сохранение времени вызова
+	for(;;)
+	{
+		if (now_get.hash == now_put.hash)   now_put.exchange = true; 						//Проверка принятого хэша
+		else                				now_put.exchange = false;
+		now_put.hash = random(1000);														//Запись случайного хэша
+    
+		esp_err_t result = esp_now_send(mac_Peer_One, (uint8_t *) &now_put, sizeof(now_put));
+		if (result != ESP_OK) log_i("! Failed Sending the data !");
+		
+		vTaskDelayUntil(&time_last, (1000));												//Таймаут между циклами
+	} 
+}
+
+
+
+/*Обработчик события приема данных ESP-NOW*/
+void OnReceiving(const uint8_t *mac, const uint8_t *data, int len)
+{							//Запись в очередь ссылки на принятые данные
+memcpy(&now_get, data, sizeof(now_get));
 }

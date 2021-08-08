@@ -1,10 +1,6 @@
-/*Шаблон, основанный на задачах FreeRTOS, с поддержкой сервисов*/
+/*Сигнализация, вариант на задачах FreeRTOS, с поддержкой сервисов*/
 /*ESP-NOW, OTA, BluetoothSerial, TelnetSerial, MQTT, IFTTT*/
-/*MAIN плата инициирует ESP-NOW обмен с подтверждением получения от SLAVE*/
-/*SLAVE возвращает полученный, случайный хэш*/
-/*SLAVE не поддерживает MQTT, в остальном аналогична MAIN*/
 
-#define MAIN																		//Закомментировать для SLAVE платы
 #define TICKCOUNT xTaskGetTickCount()/1000.0										//Время от начала загрузки
 #define CONFIG_ARDUHAL_LOG_COLORS 1													//Включение цветных логов
 
@@ -18,7 +14,7 @@
 #include <AsyncMqttClient.h>
 #include <Preferences.h>
 
-#include <Wire.h>
+#include <Wire.h>																	//Для INA219
 #include <Adafruit_INA219.h>
 
 /*Определения GPIO для SIM800*/
@@ -31,7 +27,7 @@
 #define ALARM_RELAY_PIN_1 26
 #define ALARM_RELAY_PIN_2 33
 
-/*Определения для приемника 433 Мгц*/
+/*Определения пина прерывания от приемника 433 Мгц*/
 #define RECEIVER_PIN 23
 #include <RCSwitch.h>
 
@@ -48,11 +44,12 @@ Preferences memory;
 /*Определениe для приемника 433 Мгц*/
 RCSwitch receiver = RCSwitch();
 
+/*Определениe для INA219*/
 Adafruit_INA219 ina219;
 
-/*MAC AC:67:B2:F8:E:A8 Адрес главной платы*/
+/*Имя данной платы и адрес SLAVE платы*/
 const char *board_name = "Signal";
-uint8_t mac_Peer_One[] = {0xCC, 0x50, 0xE3, 0xB5, 0x8F, 0xF0};						//Адрес SLAVE платы
+uint8_t mac_Peer_One[] = {0xCC, 0x50, 0xE3, 0xB5, 0x8F, 0xF0};
 
 /*Символьные массивы для хранения логина и пароля WiFi в NVS*/
 char ssid [30];
@@ -79,8 +76,8 @@ bool		protect;
 bool		alarm;
 bool 		light;
 };
-now_Data now_get;
-now_Data now_put;
+now_Data now_get;																	//Структура принимаемая
+now_Data now_put;																	//Структура отправляемая
 
 /*Структура для управления сиреной*/
 struct alarm_Startup
@@ -91,7 +88,7 @@ uint16_t	count;
 };
 alarm_Startup alarm_start;
 
-/*Структура для датчиков сигнализации номер, тип, код, описание*/
+/*Структура для датчиков сигнализации тип, код, описание*/
 struct detector
 {
 uint8_t     type;
@@ -111,41 +108,39 @@ flag_RepeatSignal	= false,														//Флаг недавнего сраба
 flag_ProtectOn 		= false,														//Флаг включения сигнализации
 flag_AlarmEnable	= true;															//Флаг разрешения сирены
 
-
 uint8_t
-number,
-type;
+number,																				//Номер датчика в массиве
+type;																				//Тип датчика
 
 String
-title,
+title,																				//Имя датчика
 my_number_1 	= "+79198897600",
 my_number_2 	= "+79094008600",
 boris_number 	= "+79896134008",
 gleb_number 	= "+79896134009";
 
 /*Задачи*/
-TaskHandle_t handleAlarmProcessing;
+TaskHandle_t handleAlarmProcessing;													//Хэндл задачи управления сиреной
 
 /*Очереди*/
-QueueHandle_t queueReceiving;
-QueueHandle_t queueAlarm;
+QueueHandle_t queueAlarm;															//Очередь для задачи управления сиреной
 
 /*Семафоры*/
 xSemaphoreHandle xBinSemaphore_PutStart;											//Запуск передачи ESP-NOW
-xSemaphoreHandle xBinSemaphore_SensorSignal;
+xSemaphoreHandle xBinSemaphore_SensorSignal;										//Запуск обработки полученного кода датчика
 
 /*Таймеры*/
 TimerHandle_t timerReset  		= xTimerCreate("timerReset",  		pdMS_TO_TICKS(500),         pdFALSE,  (void*)0, reinterpret_cast<TimerCallbackFunction_t>(Reset));		//Задержка для вызова Reset
 TimerHandle_t timerRecon  		= xTimerCreate("timerRecon",  		pdMS_TO_TICKS(500),         pdFALSE,  (void*)0, reinterpret_cast<TimerCallbackFunction_t>(Recon));		//Задержка для вызова Reconnect
 TimerHandle_t timerSavingCode  	= xTimerCreate("timerSavingCode",	pdMS_TO_TICKS(5000),       	pdFALSE,  (void*)0, reinterpret_cast<TimerCallbackFunction_t>(SavingCode));	//Задержка ожидания записи кода
-TimerHandle_t timerRepeatSignal = xTimerCreate("timerRepeatSignal",	pdMS_TO_TICKS(10000),       pdFALSE,  (void*)0, reinterpret_cast<TimerCallbackFunction_t>(RepeatSignal));
-
+TimerHandle_t timerRepeatSignal = xTimerCreate("timerRepeatSignal",	pdMS_TO_TICKS(10000),       pdFALSE,  (void*)0, reinterpret_cast<TimerCallbackFunction_t>(RepeatSignal));//Задержка обработки сигнала от датчика, для исключения повторного срабатывания
 
 
 
 void setup()
 {
 Serial.begin(115200);
+/*Последовательный порт SIM800*/
 Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
 
 /*Настройка WiFi*/
@@ -179,17 +174,20 @@ sendATCommand("AT", 5000);
 sendATCommand("ATE1V1+CMGF=1;&W", 5000);
 sendATCommand("AT+CMGDA=\"DEL ALL\"", 5000);
 
-/*Включение приемника 433 МГц*/
+/*Инициализация приемника 433 МГц*/
 receiver.enableReceive(RECEIVER_PIN);
-
+/*Инициализация измерителя тока*/
 ina219.begin();
+/*Запись имени платы в структуру*/
+memcpy(now_put.board_name, board_name, 20);
 
-memcpy(now_put.board_name, board_name, 20);											//Запись имени платы в структуру
 
-/*Удаление ключей || Инициализация NVS памяти */
-//memory.remove("name");
+//Инициализация NVS памяти
 memory.begin("memory", false);
+//Очистка NVS памяти
 //memory.clear();
+//Очистка ключа NVS памяти
+//memory.remove("name");
 
 /*Настройка ESP-NOW*/
 if (esp_now_init() != ESP_OK) {log_i("! Error initializing ESP-NOW !"); return;}
@@ -198,40 +196,37 @@ memcpy(peerInfo.peer_addr, mac_Peer_One, 6);
 peerInfo.channel = 0;
 peerInfo.encrypt = false;
 if (esp_now_add_peer(&peerInfo) != ESP_OK){log_i("! Failed to add peer !"); return;}
-/*Назначение функции обработки приема ESP-NOW*/
-esp_now_register_recv_cb(OnReceiving);
+
+esp_now_register_recv_cb(OnReceiving);												//Назначение функции обработки приема ESP-NOW
 
 /*Очереди*/
-queueReceiving 	= xQueueCreate(1, sizeof(now_Data));								//Передача принятых данных ESP-NOW
-queueAlarm 		= xQueueCreate(1, sizeof(alarm_Startup));							//Включение сирены
+queueAlarm 		= xQueueCreate(1, sizeof(alarm_Startup));							//Данные для включения сирены
 
 /*Семафоры*/
-vSemaphoreCreateBinary(xBinSemaphore_PutStart);									//Запуск передачи ESP-NOW
-vSemaphoreCreateBinary(xBinSemaphore_SensorSignal);
+vSemaphoreCreateBinary(xBinSemaphore_PutStart);										//Запуск передачи ESP-NOW
+vSemaphoreCreateBinary(xBinSemaphore_SensorSignal);									//Запуск обработки кода датчика
 
-/*Обнуление очереди и семафора*/
-xQueueReceive(queueAlarm, &alarm_start, 100);
+/*Обнуление очереди и семафора*/											
+xQueueReceive(queueAlarm, &alarm_start, 100);										//Для предотвращения страбатывания после загрузки
 xSemaphoreTake(xBinSemaphore_SensorSignal, 	100);
 
 /*Задачи*/
 xTaskCreate(WiFiConnect,	"WiFiConnect"		, 2000,  NULL, 1, NULL);			//Подключение WiFi при потере связи
-xTaskCreate(Now_Exchange, 	"Now_Exchange"		, 1000,  NULL, 0, NULL);			//ESP-NOW обмен
-xTaskCreate(Receiving, 		"Receiving"			, 1000,  NULL, 0, NULL); 			//Обработка принятых ESP-NOW данных
-xTaskCreate(Sending, 		"Sending"			, 1000,  NULL, 0, NULL); 			//Отправка ESP-NOW данных
+xTaskCreate(Now_Exchange, 	"Now_Exchange"		, 2000,  NULL, 0, NULL);			//ESP-NOW обмен
 xTaskCreate(Bluetooth, 		"Bluetooth"			, 3000,  NULL, 0, NULL); 			//Bluetooth терминал
 xTaskCreate(Telnet, 		"Telnet"			, 3000,  NULL, 0, NULL); 			//Telnet терминал
 xTaskCreate(OTA, 			"OTA"				, 2000,  NULL, 0, NULL); 			//OTA загрузка скетча
 xTaskCreate(MQTTConnect,	"MQTTConnect"		, 2000,  NULL, 1, NULL); 			//Подключение MQTT при потере связи
-xTaskCreate(MQTTSend,		"MQTTSend"			, 2000,  NULL, 1, NULL); 			//Отправка MQTT
+xTaskCreate(MQTTSend,		"MQTTSend"			, 2000,  NULL, 0, NULL); 			//Отправка MQTT
 
 xTaskCreate(CodeProcessing,	"CodeProcessing"	, 2000,  NULL, 0, NULL); 			//Получение кода датчика
 xTaskCreate(SIM800Processing,"SIM800Processing"	, 3000,  NULL, 0, NULL); 			//Получение SMS
 xTaskCreate(PowerControl,	"PowerControl"		, 2000,  NULL, 0, NULL); 			//Контроль 220В
-xTaskCreate(SensorSignal,	"SensorSignal"		, 2000,  NULL, 0, NULL);
+xTaskCreate(SensorSignal,	"SensorSignal"		, 2000,  NULL, 0, NULL);			//Обработка сигнала от датчика
 
-xTaskCreate(AlarmProcessing, "AlarmProcessing" 	, 1000,	 NULL, 0, &handleAlarmProcessing);
+xTaskCreate(AlarmProcessing, "AlarmProcessing" 	, 1000,	 NULL, 0, &handleAlarmProcessing); //Управление сиреной
 
-//Загрузка таблицы из EEPROM
+//Загрузка таблицы датчиков из EEPROM
 memory.getBytes("mem", (detector*)detector_ram, sizeof(detector_ram));
 /*Инкремент счетчика перезагрузок*/
 memory.putInt("countReset", memory.getInt("countReset") + 1);

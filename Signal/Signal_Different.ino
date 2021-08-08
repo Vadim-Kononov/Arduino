@@ -122,7 +122,6 @@ void AlarmProcessing (void *parameter)
 	for(;;)
 	{
 		xQueueReceive(queueAlarm, &alarm_start, portMAX_DELAY);
-		Serial.println("Очередь получена <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
 		for (int i = alarm_start.count; i > 0; i--)
 		{
 			digitalWrite(ALARM_RELAY_PIN_1, LOW);
@@ -137,29 +136,65 @@ void AlarmProcessing (void *parameter)
 
 
 
+/*Обработка события подключения клиента*/
+void BT_Event(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
+{
+  if(event == ESP_SPP_SRV_OPEN_EVT)
+  {
+    String str = "> " + String(board_name) + "\n> IP: " + WiFi.localIP().toString() + "  |  MAC: " +  WiFi.macAddress() + "\n> ";
+    SerialBT.print(str);
+  }
+}
+
+
+
+/*Функция Bluetooth терминала*/
+void Bluetooth(void *parameter)
+{
+  for(;;)
+  {
+    if (SerialBT.available())
+    {
+    String str = SerialBT.readStringUntil('\n');
+	SerialBT.println (Terminal(str));
+	SerialBT.print ("> ");
+	log_i();
+    }
+  }
+}
+
+
+
 /*Функция Telnet терминала*/
 void Telnet(void *parameter)
 {
 	for(;;)
 	{
-		/*Подключения клиента Telnet*/
-		if (TelnetServer.hasClient())
+		TelnetClient = TelnetServer.available();
+		if (TelnetClient) 
 		{
-			if(TelnetClient) TelnetClient.stop();
-			TelnetClient = TelnetServer.available();
+			Serial.println("New Client.");
 			String str = "> " + String(board_name) + "\n> IP: " + WiFi.localIP().toString() + "  |  MAC: " +  WiFi.macAddress() + "\n> ";
 			TelnetClient.print(str);
+			while (TelnetClient.connected())
+			{
+				if (TelnetClient.available())
+				{
+					String str = TelnetClient.readStringUntil('\n');
+					if (str.indexOf('\3') < 0)
+					{
+						TelnetClient.println (Terminal(str));
+						TelnetClient.print ("> ");	
+					}
+					log_i("TelnetClient Available");
+				}
+			}
+			
 		}
-		/*Получение строки из Telnet, при ее наличии, обработка*/
-		if (TelnetClient && TelnetClient.connected() && TelnetClient.available())
-		{
-		String str = TelnetClient.readStringUntil('\n');
-		TelnetClient.println (Terminal(str));
-		TelnetClient.print ("> ");
-		log_i();
-		}
+		TelnetClient.stop();
 	}
 }
+
 
 
 
