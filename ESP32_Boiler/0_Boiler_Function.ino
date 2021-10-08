@@ -133,8 +133,6 @@ string_position = "⭕0.0";
      if (position_dif > 0) {string_position =  String("🔺") + "+" + String(position_dif/4.0, 1) ; time_msec_position = xTaskGetTickCount(); turn_counter++; memory.putInt("turn_counter", turn_counter);} 
 else if (position_dif < 0) {string_position =  String("🔻") + String(position_dif/4.0, 1);        time_msec_position = xTaskGetTickCount(); turn_counter++; memory.putInt("turn_counter", turn_counter);}
 
-string_status_1 = String(position_dec, 2) + " ★ " + String(turn_counter);
-string_status_2 = string_gas_state + " " + string_position + " " + string_situation + " ★ " + Hour_display (xTaskGetTickCount() - time_msec_position) + " " + string_mode_state;
 }
 /**/
 

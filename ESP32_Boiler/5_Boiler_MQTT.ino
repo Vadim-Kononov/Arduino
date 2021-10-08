@@ -75,6 +75,9 @@ void mqtt_Send ()
 {
 if (flag_MQTT_connected)
 {
+string_status_1 = String(position_dec, 2) + " ★ " + String(turn_counter);
+string_status_2 = string_gas_state + " " + string_position + " " + string_situation + " ★ " + Hour_display (xTaskGetTickCount() - time_msec_position) + " " + string_mode_state;
+
 mqttClient.publish("temp_room",       0, false, string_temp_room.c_str());                                                              // Публикация температуры в комнате
 mqttClient.publish("temp_dif",        0, false, string_temp_dif.c_str());                                                               // Публикация разности тепературы в комнате
 mqttClient.publish("temp_water",      0, false, String(now_Store[ROLE].temp_water, 1).c_str());                                         // Публикация температуры воды в котле
